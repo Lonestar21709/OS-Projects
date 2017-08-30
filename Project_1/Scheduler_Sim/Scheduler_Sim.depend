@@ -1,0 +1,25 @@
+# depslib dependency file v1.0
+1478329231 source:c:\users\cesar garza\desktop\fall '16\operating systems\project_1\scheduler_sim\init.cpp
+	"header_sim.h"
+	<cmath>
+	<stdio.h>
+	<stdlib.h>
+	<iostream>
+	<fstream>
+	<string>
+	<iomanip>
+
+1478320035 source:c:\users\cesar garza\desktop\fall '16\operating systems\project_1\scheduler_sim\main.cpp
+	"header.h"
+	<cmath>
+	<stdio.h>
+	<stdlib.h>
+	<iostream>
+	<fstream>
+	<string>
+	<iomanip>
+
+1478063294 c:\users\cesar garza\desktop\fall '16\operating systems\project_1\scheduler_sim\header.h
+
+1478329256 c:\users\cesar garza\desktop\fall '16\operating systems\project_1\scheduler_sim\header_sim.h
+

@@ -1,0 +1,326 @@
+#include <cmath>
+#include <stdio.h>
+#include <stdlib.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <iomanip>
+using namespace std;
+
+
+/**********************
+       CPU Node
+***********************/
+struct cpu
+{
+    float clock; //cpu clock
+    //bool idle;  // is cpu idle ?
+    bool cpu_busy; //is cpu free or busy
+    struct process* p_ptr; //Cpu points to process running
+
+}; cpu* top_cpu; // head of the cpu
+
+/***********************
+   Process Ready Queue
+************************/
+struct ready_queue
+{
+    struct process* p_ptr; // points to corresponding process
+    struct readyQueue* next_r; // points to next event in the ready queue
+
+}; ready_queue* top_r; // head of ready queue
+
+/***********************
+      Event Queue
+************************/
+ struct event_queue
+ {
+     float time;
+     //1 = arrival, 2 = departure, 3 = execute, 4 = preemption
+     int type;
+     struct event_queue* next_e;
+     struct process* p_ptr;
+
+ }; event_queue* top_e; // head of event queue
+
+/***********************
+  Process Control Block
+************************/
+struct process
+{
+   int id; //process id, will increment by 1
+   // 1 = new, 2 = ready, 3 = running, 4 = waiting, 5 = terminated
+   //int process_state;
+   // accounting/scheduling info
+   float arrival_time; //
+   float service_time; //
+   float execution_time;   //
+   float restart_time; //
+   float completion_time;  //
+   float remaining_time; //
+   //point to next process
+   struct process* next_p; //
+}; process* top_p; //head of pcb list
+
+/**********************
+  Function Prototypes
+***********************/
+void init();
+void run_sim();
+void generate_report();
+//Scheduler prototypes
+void FCFS();
+
+//
+void schedule_event(int type);
+int process_event(int type);
+void scheudle_rr();
+void process_rr();
+//Utility prototypes
+float urand();
+float genExp(float);
+/**********************
+    GLOBAL VARIABLES
+***********************/
+int num_processes; // 10,000 processes
+int schedule_type; // 4 types
+float lambda;        // avg arrival rate
+float Ts;          // avg service time
+float mew;         // avg service rate
+float quantum;      //
+float quantum_clock; //
+int arrival_counter; // counter matches up processes as they arrive
+int process_counter;
+//variables to set which event to schedule and process
+int arrival = 1,
+    departure = 2,
+    assign = 3,
+    preemption = 4;
+
+/**********************
+  Function Definitions
+***********************/
+void init()
+{
+    process_counter = 0;
+    num_processes = 10;
+    //create the cpu
+    top_cpu = new cpu;
+    top_cpu->clock = 0.0; // clock is at 0
+    top_cpu->cpu_busy = false; // cpu is not busy at start
+    top_cpu->p_ptr = 0; // no process in cpu at start
+
+
+    // first process initialize, that top will always point too
+    //which will have an id = 0
+    top_p = new process;
+    top_p->id = process_counter;
+    //top_p->process_state = 1; // new states
+    top_p->arrival_time = genExp(lambda);
+    top_p->service_time = genExp(mew);
+    top_p->execution_time = 0.0;
+    top_p->restart_time = 0.0;
+    top_p->completion_time = 0.0;
+    top_p->remaining_time = top_p->service_time;
+    top_p->next_p = 0; //NULL
+    //initialize first event, set to arrival, and point to first process
+    top_e = new event_queue;
+    top_e->time = top_p->arrival_time;
+    top_e->type = 1;
+    top_e->next_e = 0; //NULL
+    top_e->p_ptr = top_p;
+    // initialize the rest of the processes
+    while(process_counter < num_processes)
+    {
+
+        // just setting up the id for each process,
+        process* new_p = top_p;
+        //traverse the process list to the end
+        while( new_p->next_p !=0 )
+        {
+            new_p = new_p->next_p;
+        }
+        new_p->next_p = new process;
+        //new_p->id = process_counter;
+        new_p->next_p->id = process_counter;
+        //new_p->process_state = 1; // new state
+        //new_p->arrival_time = new_p->arrival_time + genExp(lambda);
+        new_p->next_p->arrival_time = new_p->arrival_time + genExp(lambda);
+        //new_p->service_time = genExp(mew);
+        new_p->next_p->service_time = genExp(mew);
+        //new_p->execution_time = 0.0;
+        new_p->next_p->execution_time = 0.0;
+        //new_p->restart_time = 0.0;
+        new_p->next_p->restart_time = 0.0;
+        //new_p->completion_time = 0.0;
+        new_p->next_p->completion_time = 0.0;
+        //new_p->remaining_time = new_p->next_p->service_time;
+        new_p->next_p->remaining_time = new_p->next_p->service_time;
+        new_p->next_p->next_p = 0;
+        process_counter++;
+    }
+}
+/*void schedule_event(int type)
+{
+    switch(type)
+    {
+    case 1: //arrival
+        //match the process with the arrival
+        process* temp = top_p;
+        while(temp->id != arrival_counter)
+        {
+            temp = temp->next_p;
+        }
+        arrival_counter++;
+        //create arrival event
+        //event_queue* arrival = new event_queue;
+        //arrival->time = temp->next_p->arrival_time;
+        //arrival->type = 1;
+        //arrival->p_ptr = temp->next_p;
+        //arrival->next_e = 0;
+        break;
+    case 2: //departure
+        break;
+    case 3: //assign
+        break;
+    case 4: //preemption
+        break;
+    }
+
+}*/
+/*
+void FCFS()
+{
+    int departure_count = 0;
+    int arrival_counter = 0;
+    while(departure_count < num_processes)
+    {
+        //if cpu is busy
+        if(top_cpu->cpu_busy == true)
+        {
+            schedule_event(departure);
+        }
+        //cpu is not busy
+        else
+        {
+            schedule_event(arrival);
+            //check if ready queue has a process ready for cpu
+            if(top_r != 0)
+            {
+                schedule_event(assign);
+            }
+        }
+        //check for events in event queue to process
+        if (top_e->type == 1)
+        {
+            process_event(arrival);
+        }
+        else if (top_e->type == 2)
+        {
+            process_event(departure);
+            departure_count++;
+        }
+        else if (top_e->type == 3)
+        {
+            process_event(assign);
+        }
+
+    }
+}
+*/
+
+
+
+
+float urand()
+{
+	return( (float) rand()/RAND_MAX );
+}
+float genExp(float lambda)
+{
+   float u,x;
+   x = 0;
+   while( x == 0 )
+    {
+      u = urand();
+      x = (-1/lambda)*log(u);
+    }
+   return (x);
+}
+
+/////////////////////////////////////////////////////////////////////
+
+int main()
+{
+
+    init();
+    //cout << "TESTING" << endl;
+    // int arrival_counter = 0;
+    /*
+    int id_process;
+    process* pIT = top_p;
+    id_process = pIT->id;
+    while(pIT->next_p != 0 )
+    {
+        id_process = pIT->id;
+        cout << id_process << endl;
+        pIT = pIT->next_p;
+
+    }
+    */
+   /* int id_process;
+    process* temp = top_p;
+    id_process = temp->id;
+    while(temp->next_p != 0)
+    {
+        cout << "TESTING" << endl;
+       cout << id_process << endl;
+       while(id_process != arrival_counter)
+        {
+            cout << id_process << endl;
+            temp = temp->next_p;
+            arrival_counter++;
+        }
+      temp = temp->next_p;
+    }
+*/
+    return 0;
+}
+
+
+
+
+/////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

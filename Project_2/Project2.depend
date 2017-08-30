@@ -1,0 +1,8 @@
+# depslib dependency file v1.0
+1481169335 source:c:\users\cesar garza\desktop\fall '16\operating systems\project_2\pc2_garza.cpp.cpp
+	<pthread.h>
+	<stdio.h>
+	<stdlib.h>
+	<time.h>
+	<fstream>
+

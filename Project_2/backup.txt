@@ -1,0 +1,292 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <fstream>
+#define NUM_THREADS 4
+#define NUM_PLAYERS 3
+#define NUM_ROUNDS 3
+#define NUM_IN_SUIT 4
+//
+
+//globals
+FILE *logfile;
+//global pthread mutex and conditions
+pthread_mutex_t mutex_deck_busy = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_dealer_done = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_win = PTHREAD_COND_INITIALIZER;
+pthread_t player_thread [NUM_PLAYERS];
+pthread_t dealer_thread;
+//global variables
+int seed = 0;
+int card_turn;
+const int NUM_CARDS = 52;
+int deck[NUM_CARDS];
+int *top_deck;
+int *bottom_deck;
+int start_player;
+int current_round = 1;
+bool round_win = false;
+
+struct hand
+{
+    int card_1, card_2;
+};
+hand player_1, player_2, player_3;
+
+//function prototypes
+void *dealer(void *arg);
+void *player(void *player_ID);
+void round();
+void build_deck();
+void use_deck(long, hand);
+void display_deck();
+
+/**********************
+        MAIN
+***********************/
+int main(int argc, char *argv[])
+{
+    logfile = fopen("log.txt", "a");
+    fprintf(logfile, "----------\nPairWar Game\n----------\n");
+    //setting seed to value from command line
+    seed = atoi( argv[1]);
+    srand(seed);
+    build_deck();
+    /*build deck, must have 4 of each (1-13)
+    int current_card = 0;
+    int card_val = 0;
+    //for (int i = 1; i <= 13; i++)
+    while((current_card < NUM_CARDS) && (card_val < (NUM_CARDS/NUM_IN_SUIT)))
+    {
+        for(int c = 1; c <= NUM_IN_SUIT; c++)
+        {
+            deck[current_card] = card_val;
+            current_card++;
+        }
+        card_val++;
+    }
+    top_deck = deck;
+    bottom_deck = deck + 51;
+    */
+    // start round
+    while(current_round <= NUM_ROUNDS)
+    {
+        round();
+        current_round++;
+        round_win = false;
+    }
+    //close the file
+    fclose(logfile);
+    exit(EXIT_SUCCESS);
+
+}
+void round()
+{
+    //print current round
+    printf("ROUND #%d: \n", current_round);
+    fprintf(logfile, "ROUND #%d:\n", current_round);
+    //create threads
+    //create dealer thread
+    int rd, rp;
+
+    rd = pthread_create(&dealer_thread, NULL, &dealer, NULL);
+    //create player threads
+    for(long i = 1; i <= NUM_PLAYERS; i++)
+    {
+        rp = pthread_create(&player_thread[i], NULL, &player, (void *)i);
+    }
+    // have all the threads join
+    pthread_join(dealer_thread, NULL);
+    for(int x = 0; x < NUM_PLAYERS; x++)
+    {
+        pthread_join(player_thread[x], NULL);
+    }
+}
+void build_deck()
+{
+     //build deck, must have 4 of each (1-13)
+    int current_card = 0;
+    int card_val = 0;
+    //for (int i = 1; i <= 13; i++)
+    while((current_card < NUM_CARDS) && (card_val < (NUM_CARDS/NUM_IN_SUIT)))
+    {
+        for(int c = 1; c <= NUM_IN_SUIT; c++)
+        {
+            deck[current_card] = card_val;
+            current_card++;
+        }
+        card_val++;
+    }
+    top_deck = deck;
+    bottom_deck = deck + 51;
+}
+void *dealer(void *arg)
+{
+    long player_id = 0;  // dealer = 0
+    card_turn = 0;      // 0 means dealers turn
+    hand dealer_hand;   // need a null hand to pass as a parameter for use_deck
+    use_deck(player_id, dealer_hand); // dealer needs to shuffle the deck,
+
+    //leave dealer thread, lock exit
+    pthread_mutex_lock(&mutex_dealer_done);
+        while(!round_win)
+        {
+            pthread_cond_wait(&cond_win, &mutex_dealer_done);
+        }
+    //unlock exit
+    pthread_mutex_unlock(&mutex_dealer_done);
+    fprintf(logfile, "DEALER: exits round\n");
+    pthread_exit(NULL);
+}
+
+void *player(void *player_ID){
+   long player_id = (long)player_ID;
+   card_turn = 0;
+   // assign hands to players based on which round is being played
+   hand current_hand;
+   //player 1 is dealt first
+   if( current_round == 1 )
+    {
+        if( player_id == 1 )
+            current_hand = player_1;
+        else if( player_id == 2 )
+            current_hand = player_2;
+        else
+            current_hand = player_3;
+    }
+    //player 2 is dealt first
+    else if( current_round == 2 )
+    {
+        if( player_id == 2 )
+            current_hand = player_1;
+        else if( player_id == 3 )
+            current_hand = player_2;
+        else
+            current_hand = player_3;
+    }
+    //player 3 is dealt first
+    else if( current_round == 3 )
+    {
+        if( player_id == 3 )
+            current_hand = player_1;
+        else if( player_id == 1 )
+            current_hand = player_2;
+        else
+            current_hand = player_3;
+    }
+
+    while( round_win == 0 )
+    {
+        //lock the deck
+        pthread_mutex_lock(&mutex_deck_busy);
+        //players need to wait for their turn
+        while( player_id != card_turn && round_win == 0 )
+        {
+            pthread_cond_wait(&condition_var, &mutex_deck_busy);
+        }
+        //now players can use the deck
+        if( round_win == 0 )
+        {
+            use_deck(player_id, current_hand);
+        }
+        //unlock the deck
+        pthread_mutex_unlock(&mutex_deck_busy);
+    }
+    //leave player thread
+    fprintf(logfile, "PLAYER %ld:  exits round\n", player_id);
+    pthread_exit(NULL);
+}
+
+void use_deck(long player_id, hand current_hand)
+{
+    //if id is 0, then its dealers turn to shuffle and deal the cards
+   if( player_id == 0 )
+    {
+        fprintf(logfile, "DEALER: shuffle\n");
+        //shuffle cards
+        {
+        // deck[0-51]
+        for( int i = 0; i < 51; i++ )
+            {
+              int rand_pos = i + (rand() % 51);
+              int temp = deck[i];
+              deck[i] = deck[rand_pos];
+              deck[rand_pos] = temp;
+            }
+        }
+        //deal first card to players, point to next card in the deck
+        fprintf(logfile, "DEALER: deal\n");
+        player_1.card_1 = *top_deck; top_deck = top_deck + 1;
+        player_2.card_1 = *top_deck; top_deck = top_deck + 1;
+        player_3.card_1 = *top_deck; top_deck = top_deck + 1;
+   }
+   else{ // player uses the deck................................................
+
+      // show hand
+      fprintf(logfile, "PLAYER %ld: hand %d \n", player_id, current_hand.card_1);
+
+      // draw a card
+      current_hand.card_2 = *top_deck,
+      top_deck = top_deck + 1;
+      fprintf(logfile, "PLAYER %ld: draws %d \n", player_id,current_hand.card_2);
+
+      // show hand
+      printf("HAND %d %d\n", current_hand.card_1, current_hand.card_2);
+      fprintf(logfile, "PLAYER %ld: hand %d %d\n", player_id, current_hand.card_1, current_hand.card_2);
+
+      // compare the cards
+      if( current_hand.card_1 == current_hand.card_2 ){
+         // if the cards match, then declare a winner
+         printf("WIN yes\n");
+         fprintf(logfile, "PLAYER %ld: wins\n", player_id);
+         round_win = true;
+         pthread_cond_signal(&cond_win); // signal dealer to exit
+      }
+      else{
+         // if the cards don't match, then discard a card
+         printf("WIN no\n");
+         // shift cards in deck to make room for discard
+         top_deck = top_deck - 1;
+         int *ptr = top_deck;
+         while( ptr != bottom_deck ){
+            *ptr = *(ptr + 1);
+            ptr = ptr + 1;
+         }
+         // randomly select discard and put it back in the deck
+         int discard = rand()%2;
+         if( discard == 0 ){
+            fprintf(logfile, "PLAYER %ld: discards %d \n", player_id, current_hand.card_1);
+            *bottom_deck = current_hand.card_1;  // put card back in deck
+            current_hand.card_1 = current_hand.card_2; // set card1 to remaining card value
+         }
+         else{
+            fprintf(logfile, "PLAYER %ld: discards %d \n", player_id, current_hand.card_2);
+            *bottom_deck = current_hand.card_2;
+         }
+         // print the contents of the deck
+         display_deck();
+      }
+   }
+   card_turn ++; // inc turn so next player may use the deck
+   if( card_turn > NUM_THREADS ) card_turn = 1;      // if player3 went, move to player1
+   pthread_cond_broadcast(&condition_var); // broadcast that deck is available
+} // end function
+
+void display_deck()
+{ // print deck to console and to log
+   printf("DECK: ");
+   fprintf(logfile, "DECK: ");
+   int *ptr = top_deck;
+   while( ptr != bottom_deck )
+    {
+      printf("%d ", *ptr);
+      fprintf(logfile, "%d ", *ptr);
+      ptr++;
+      if( ptr == bottom_deck )
+        {
+         printf("%d \n", *ptr);
+         fprintf(logfile, "%d \n", *ptr);
+        }
+    }
+}
